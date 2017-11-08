@@ -1,0 +1,251 @@
+---
+title: "Data Science Capstone - Milestone report"
+author: "Jason Collins"
+date: "7/11/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+if (getwd()!="\\\\a1.asic.gov.au/ds/userHome/jason.collins") {
+        setwd("\\\\a1.asic.gov.au/ds/userHome/jason.collins")
+}
+```
+
+## Summary
+
+This document describes the exploratory data analysis of a text corpus for the Data Science Specialisation Capstone Project, and provides next steps for developing a predictive text model.
+
+## Problem
+
+The  aim of the capstone project is develop a predictive text model from an unstructured text corpus, and incorporate this into a predictive text product. As a first step, I cleaned and explored the corpus that I will use this to build the predictive text model.
+
+## Setup
+
+First I load the packages that will be used through the analysis.
+
+```{r packages, results="hide", message=FALSE}
+library("readr") #for importing the text
+library("stringi") #for the word count
+library("tm") #for cleaning the corpus
+library("RWeka") #for creating ngrams
+library("slam") #for manipulating the sparse TDM matrix
+library("ggplot2") # for plotting
+```
+
+## Obtaining and importing the data
+
+I downloaded the data from a link provided from the course website. It is in a zip file, which I need to unzip.
+
+```{r download, cache=TRUE, include=FALSE}
+URL <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+ifelse(!file.exists("Downloads/Coursera-SwiftKey.zip"), download.file(url = URL, "Downloads/Coursera-SwiftKey.zip"), "File already in directory")
+ifelse(!file.exists("Downloads/final"), unzip("Coursera-SwiftKey.zip"), "File already unzipped")
+```
+
+The unzipped folder contains text in four languages. For this project I will focus on the English text. That English text is sourced from twitter, news and blog sites. I read each of these three datasets into R.
+
+```{r import, cache=TRUE}
+twitter <- read_lines("Downloads/final/en_US/en_US.twitter.txt")
+blog <- read_lines("Downloads/final/en_US/en_US.blogs.txt")
+news <- read_lines("Downloads/final/en_US/en_US.news.txt")
+```
+
+## Basic data features
+
+Each of the three corpus contain a similar number of words to the other - between thirty and forty million. However, the blog and news words are contained in a smaller number of lines, whereas twitter (as might be expected) is largely a body of short lines of text.
+
+```{r count, cache=TRUE}
+twitterWords <- stri_count_words(twitter)
+blogWords <- stri_count_words(news)
+newsWords <- stri_count_words(blog)
+
+twitterCount <- cbind(sum(twitterWords), length(twitter))
+blogCount <- cbind(sum(blogWords), length(blog))
+newsCount <- cbind(sum(newsWords), length(news))
+
+tableCount <- rbind(twitterCount, blogCount, newsCount)
+row.names(tableCount) <- c("twitter", "blog", "news")
+colnames(tableCount) <- c("words", "lines")
+
+tableCount
+```
+
+The differences in the distribution of line lengths is greater than the differences in number of lines. The longest news line is 6726 words, compared to only 47 for the twitter text.
+
+```{r distribution, cache=TRUE}
+summary(twitterWords)
+summary(blogWords)
+summary(newsWords)
+```
+
+## Sampling
+
+For this initial analysis, I sampled 10,000 lines in total and combined into a single dataset. I will likely use a larger sample in developing the model.
+
+```{r, cache=TRUE}
+set.seed(20171030)
+sampleText <- sample(c(twitter, blog, news), 10000)
+
+#clear some space
+rm(twitter, news, blog)
+```
+
+## Cleaning
+
+To clean the data, I ensured all data is UTF-8, switched to lowercase, with punctuation, numbers, extra whitespace and profanity removed.
+
+```{r cleaning, cache=TRUE}
+sampleCorpus <- Corpus(VectorSource(sampleText))
+
+#ensure dataset encoded in UTF-8 (see http://tm.r-forge.r-project.org/faq.html)
+sampleCorpus <- tm_map(sampleCorpus, content_transformer(function(x) iconv(enc2utf8(x), sub = "byte")))
+
+#convert to lowercase
+sampleCorpus <- tm_map(sampleCorpus, content_transformer(tolower))
+
+#remove punctuation
+sampleCorpus <- tm_map(sampleCorpus, content_transformer(removePunctuation))
+
+#remove numbers
+sampleCorpus <- tm_map(sampleCorpus, content_transformer(removeNumbers))
+
+#remove whitespace
+sampleCorpus <- tm_map(sampleCorpus, content_transformer(stripWhitespace))
+
+#remove profanity. List of words sourced from Luis von Ahn's Research at Carnegie Mellon
+URL2 <- "http://www.cs.cmu.edu/~biglou/resources/bad-words.txt"
+if (!file.exists("Downloads/bad-words.txt")) {
+        download.file(url = URL2, "Downloads/bad-words.txt")
+}
+profanity <- read_lines("Downloads/bad-words.txt")
+sampleCorpus <- tm_map(sampleCorpus, removeWords, profanity) 
+
+```
+
+
+## Tokenisation
+
+Following cleaning, I broke the corpus down into sets of unigrams, bigrams and trigrams to allow examination of the frequencies of different words, pairings and triplets. N-grams of this nature will form the basis of the predictive model.
+
+```{r tokenisation, cache=TRUE}
+#Unigrams
+unigram <- function(x) {
+        NGramTokenizer(x, Weka_control(min = 1, max = 1))
+}
+
+unigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = unigram))
+
+#Bigrams
+bigram <- function(x) {
+        NGramTokenizer(x, Weka_control(min = 2, max = 2))
+}
+
+bigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = bigram))
+
+#Trigrams
+trigram <- function(x) {
+        NGramTokenizer(x, Weka_control(min = 3, max = 3))
+}
+
+trigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = trigram))
+
+```
+
+## Sample data exploration
+
+These plots show the 20 most frequent ngrams in the sample. Unsurprisingly these are dominated by stopwords.
+
+```{r frequencies, cache=TRUE}
+#unigrams - use row_sums from slam due to memory issues with rowSums function
+uniCount <- row_sums(unigramTDM)
+uniCount <- as.data.frame(sort(uniCount, decreasing=TRUE))
+uniCount$names = rownames(uniCount)
+colnames(uniCount) <- c("freq", "word")
+
+#Create ordered factor so ggplot doesn't sort alphabetically
+uniCount$word <- factor(uniCount$word, levels = rev(uniCount$word))
+uniG <- ggplot(head(uniCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("unigrams")
+uniG
+
+#bigrams
+biCount <- row_sums(bigramTDM)
+biCount <- as.data.frame(sort(biCount, decreasing=TRUE))
+biCount$names = rownames(biCount)
+colnames(biCount) <- c("freq", "word")
+
+#Create ordered factor so ggplot doesn't sort alphabetically
+biCount$word <- factor(biCount$word, levels = rev(biCount$word))
+biG <- ggplot(head(biCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("bigrams")
+biG
+
+#trigrams
+triCount <- row_sums(trigramTDM)
+triCount <- as.data.frame(sort(triCount, decreasing=TRUE))
+triCount$names = rownames(triCount)
+colnames(triCount) <- c("freq", "word")
+
+#Create ordered factor so ggplot doesn't sort alphabetically
+triCount$word <- factor(triCount$word, levels = rev(triCount$word))
+triG <- ggplot(head(triCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("trigrams")
+triG
+
+```
+
+As a result, I develop a new corpus and ngrams with the stopwords removed.
+
+```{r noStopwords, cache=TRUE}
+sampleNoStop <- tm_map(sampleCorpus, removeWords, stopwords('english'))
+
+unigramTDM <- TermDocumentMatrix(sampleNoStop, control = list(tokenize = unigram))
+bigramTDM <- TermDocumentMatrix(sampleNoStop, control = list(tokenize = bigram))
+trigramTDM <- TermDocumentMatrix(sampleNoStop, control = list(tokenize = trigram))
+```
+
+The new plots show some intuitive pairings, although the trigrams also suggest there are some data issues (e.g. "e e e" and "column column column").
+
+```{r newPlots, cache=TRUE}
+#unigrams
+uniCount <- row_sums(unigramTDM)
+uniCount <- as.data.frame(sort(uniCount, decreasing=TRUE))
+uniCount$names = rownames(uniCount)
+colnames(uniCount) <- c("freq", "word")
+
+#Create ordered factor so ggplot doesn't sort alphabetically
+uniCount$word <- factor(uniCount$word, levels = rev(uniCount$word))
+uniG <- ggplot(head(uniCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("unigrams - no stop words")
+uniG
+
+#bigrams
+biCount <- row_sums(bigramTDM)
+biCount <- as.data.frame(sort(biCount, decreasing=TRUE))
+biCount$names = rownames(biCount)
+colnames(biCount) <- c("freq", "word")
+
+#Create ordered factor so ggplot doesn't sort alphabetically
+biCount$word <- factor(biCount$word, levels = rev(biCount$word))
+biG <- ggplot(head(biCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("bigrams - no stop words")
+biG
+
+#trigrams
+triCount <- row_sums(trigramTDM)
+triCount <- as.data.frame(sort(triCount, decreasing=TRUE))
+triCount$names = rownames(triCount)
+colnames(triCount) <- c("freq", "word")
+
+#Create ordered factor so ggplot doesn't sort alphabetically
+triCount$word <- factor(triCount$word, levels = rev(triCount$word))
+triG <- ggplot(head(triCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("trigrams - no stop words")
+triG
+
+```
+
+## Next steps
+
+Next steps for this project are to:
+
+1. Build a larger, high-quality sample.
+2. Learn some more about NLP. I have some intuition about building the model - look at last n-1 words and guess the highest probability final word from the ngrams with the same first n-1 words. However, I do not know how to effectively implement this, particularly for sets of words not in the sample.
+3. Build the prediction model.
+4. Test and refine to obtain acceptable performance.
+5. Incorporate into a user-friendly shiny app.
