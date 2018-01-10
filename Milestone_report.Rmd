@@ -7,9 +7,6 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
-if (getwd()!="\\\\a1.asic.gov.au/ds/userHome/jason.collins") {
-        setwd("\\\\a1.asic.gov.au/ds/userHome/jason.collins")
-}
 ```
 
 ## Summary
