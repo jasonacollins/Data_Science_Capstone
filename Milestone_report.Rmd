@@ -4,8 +4,8 @@ author: "Jason Collins"
 date: "7/11/2017"
 output: html_document
 ---
-
-```{r setup, include=FALSE}
+  
+  ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
 ```
 
@@ -36,16 +36,16 @@ I downloaded the data from a link provided from the course website. It is in a z
 
 ```{r download, cache=TRUE, include=FALSE}
 URL <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
-ifelse(!file.exists("Downloads/Coursera-SwiftKey.zip"), download.file(url = URL, "Downloads/Coursera-SwiftKey.zip"), "File already in directory")
-ifelse(!file.exists("Downloads/final"), unzip("Coursera-SwiftKey.zip"), "File already unzipped")
+ifelse(!file.exists("Coursera-SwiftKey.zip"), download.file(url = URL, "Coursera-SwiftKey.zip"), "File already in directory")
+ifelse(!file.exists("final"), unzip("Coursera-SwiftKey.zip"), "File already unzipped")
 ```
 
 The unzipped folder contains text in four languages. For this project I will focus on the English text. That English text is sourced from twitter, news and blog sites. I read each of these three datasets into R.
 
 ```{r import, cache=TRUE}
-twitter <- read_lines("Downloads/final/en_US/en_US.twitter.txt")
-blog <- read_lines("Downloads/final/en_US/en_US.blogs.txt")
-news <- read_lines("Downloads/final/en_US/en_US.news.txt")
+twitter <- read_lines("final/en_US/en_US.twitter.txt")
+blog <- read_lines("final/en_US/en_US.blogs.txt")
+news <- read_lines("final/en_US/en_US.news.txt")
 ```
 
 ## Basic data features
@@ -80,7 +80,7 @@ summary(newsWords)
 
 For this initial analysis, I sampled 10,000 lines in total and combined into a single dataset. I will likely use a larger sample in developing the model.
 
-```{r, cache=TRUE}
+```{r sample, cache=TRUE}
 set.seed(20171030)
 sampleText <- sample(c(twitter, blog, news), 10000)
 
@@ -93,7 +93,7 @@ rm(twitter, news, blog)
 To clean the data, I ensured all data is UTF-8, switched to lowercase, with punctuation, numbers, extra whitespace and profanity removed.
 
 ```{r cleaning, cache=TRUE}
-sampleCorpus <- Corpus(VectorSource(sampleText))
+sampleCorpus <- VCorpus(VectorSource(sampleText))
 
 #ensure dataset encoded in UTF-8 (see http://tm.r-forge.r-project.org/faq.html)
 sampleCorpus <- tm_map(sampleCorpus, content_transformer(function(x) iconv(enc2utf8(x), sub = "byte")))
@@ -112,12 +112,11 @@ sampleCorpus <- tm_map(sampleCorpus, content_transformer(stripWhitespace))
 
 #remove profanity. List of words sourced from Luis von Ahn's Research at Carnegie Mellon
 URL2 <- "http://www.cs.cmu.edu/~biglou/resources/bad-words.txt"
-if (!file.exists("Downloads/bad-words.txt")) {
-        download.file(url = URL2, "Downloads/bad-words.txt")
+if (!file.exists("bad-words.txt")) {
+  download.file(url = URL2, "bad-words.txt")
 }
-profanity <- read_lines("Downloads/bad-words.txt")
+profanity <- read_lines("bad-words.txt")
 sampleCorpus <- tm_map(sampleCorpus, removeWords, profanity) 
-
 ```
 
 
@@ -125,35 +124,38 @@ sampleCorpus <- tm_map(sampleCorpus, removeWords, profanity)
 
 Following cleaning, I broke the corpus down into sets of unigrams, bigrams and trigrams to allow examination of the frequencies of different words, pairings and triplets. N-grams of this nature will form the basis of the predictive model.
 
-```{r tokenisation, cache=TRUE}
+```{r tokenisation_unigram, cache=TRUE}
 #Unigrams
 unigram <- function(x) {
-        NGramTokenizer(x, Weka_control(min = 1, max = 1))
+  NGramTokenizer(x, Weka_control(min = 1, max = 1))
 }
 
 unigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = unigram))
+```
 
+```{r tokenisation_bigram, cache=TRUE}
 #Bigrams
 bigram <- function(x) {
-        NGramTokenizer(x, Weka_control(min = 2, max = 2))
+  NGramTokenizer(x, Weka_control(min = 2, max = 2))
 }
 
 bigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = bigram))
+```
 
+```{r tokenisation_trigram, cache=TRUE}
 #Trigrams
 trigram <- function(x) {
-        NGramTokenizer(x, Weka_control(min = 3, max = 3))
+  NGramTokenizer(x, Weka_control(min = 3, max = 3))
 }
 
 trigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = trigram))
-
 ```
 
 ## Sample data exploration
 
 These plots show the 20 most frequent ngrams in the sample. Unsurprisingly these are dominated by stopwords.
 
-```{r frequencies, cache=TRUE}
+```{r unigram, cache=TRUE}
 #unigrams - use row_sums from slam due to memory issues with rowSums function
 uniCount <- row_sums(unigramTDM)
 uniCount <- as.data.frame(sort(uniCount, decreasing=TRUE))
@@ -164,7 +166,9 @@ colnames(uniCount) <- c("freq", "word")
 uniCount$word <- factor(uniCount$word, levels = rev(uniCount$word))
 uniG <- ggplot(head(uniCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("unigrams")
 uniG
+```
 
+```{r bigram, cache=TRUE}
 #bigrams
 biCount <- row_sums(bigramTDM)
 biCount <- as.data.frame(sort(biCount, decreasing=TRUE))
@@ -175,7 +179,9 @@ colnames(biCount) <- c("freq", "word")
 biCount$word <- factor(biCount$word, levels = rev(biCount$word))
 biG <- ggplot(head(biCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("bigrams")
 biG
+```
 
+```{r trigram, cache=TRUE}
 #trigrams
 triCount <- row_sums(trigramTDM)
 triCount <- as.data.frame(sort(triCount, decreasing=TRUE))
@@ -186,7 +192,6 @@ colnames(triCount) <- c("freq", "word")
 triCount$word <- factor(triCount$word, levels = rev(triCount$word))
 triG <- ggplot(head(triCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("trigrams")
 triG
-
 ```
 
 As a result, I develop a new corpus and ngrams with the stopwords removed.
@@ -240,8 +245,8 @@ triG
 ## Next steps
 
 Next steps for this project are to:
-
-1. Build a larger, high-quality sample.
+  
+  1. Build a larger, high-quality sample.
 2. Learn some more about NLP. I have some intuition about building the model - look at last n-1 words and guess the highest probability final word from the ngrams with the same first n-1 words. However, I do not know how to effectively implement this, particularly for sets of words not in the sample.
 3. Build the prediction model.
 4. Test and refine to obtain acceptable performance.
