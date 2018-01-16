@@ -1,7 +1,7 @@
 ---
 title: "Data Science Capstone - Milestone report"
 author: "Jason Collins"
-date: "7/11/2017"
+date: "05/02/2018"
 output: html_document
 ---
   
@@ -42,9 +42,15 @@ ifelse(!file.exists("final"), unzip("Coursera-SwiftKey.zip"), "File already unzi
 
 The unzipped folder contains text in four languages. For this project I will focus on the English text. That English text is sourced from twitter, news and blog sites. I read each of these three datasets into R.
 
-```{r import, cache=TRUE}
+```{r import twitter, cache=TRUE}
 twitter <- read_lines("final/en_US/en_US.twitter.txt")
+```
+
+```{r import blog, cache=TRUE}
 blog <- read_lines("final/en_US/en_US.blogs.txt")
+```
+
+```{r import news, cache=TRUE}
 news <- read_lines("final/en_US/en_US.news.txt")
 ```
 
@@ -90,7 +96,7 @@ rm(twitter, news, blog)
 
 ## Cleaning
 
-To clean the data, I ensured all data is UTF-8, switched to lowercase, with punctuation, numbers, extra whitespace and profanity removed.
+To clean the data, I ensured all data is UTF-8, switched to lowercase, with punctuation, numbers, extra whitespace, profanity and stopwords removed.
 
 ```{r cleaning, cache=TRUE}
 sampleCorpus <- VCorpus(VectorSource(sampleText))
@@ -117,6 +123,9 @@ if (!file.exists("bad-words.txt")) {
 }
 profanity <- read_lines("bad-words.txt")
 sampleCorpus <- tm_map(sampleCorpus, removeWords, profanity) 
+
+#remove stopwords
+sampleCorpus <- tm_map(sampleCorpus, removeWords, stopwords('english'))
 ```
 
 
@@ -124,7 +133,7 @@ sampleCorpus <- tm_map(sampleCorpus, removeWords, profanity)
 
 Following cleaning, I broke the corpus down into sets of unigrams, bigrams and trigrams to allow examination of the frequencies of different words, pairings and triplets. N-grams of this nature will form the basis of the predictive model.
 
-```{r tokenisation_unigram, cache=TRUE}
+```{r tokenisation_unigram}
 #Unigrams
 unigram <- function(x) {
   NGramTokenizer(x, Weka_control(min = 1, max = 1))
@@ -133,7 +142,7 @@ unigram <- function(x) {
 unigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = unigram))
 ```
 
-```{r tokenisation_bigram, cache=TRUE}
+```{r tokenisation_bigram}
 #Bigrams
 bigram <- function(x) {
   NGramTokenizer(x, Weka_control(min = 2, max = 2))
@@ -142,7 +151,7 @@ bigram <- function(x) {
 bigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = bigram))
 ```
 
-```{r tokenisation_trigram, cache=TRUE}
+```{r tokenisation_trigram}
 #Trigrams
 trigram <- function(x) {
   NGramTokenizer(x, Weka_control(min = 3, max = 3))
@@ -153,9 +162,9 @@ trigramTDM <- TermDocumentMatrix(sampleCorpus, control = list(tokenize = trigram
 
 ## Sample data exploration
 
-These plots show the 20 most frequent ngrams in the sample. Unsurprisingly these are dominated by stopwords.
+These plots show the 20 most frequent ngrams in the sample. The plots show some intuitive pairings, although they also indicate some data issues (e.g. trigram of "e e e"").
 
-```{r unigram, cache=TRUE}
+```{r unigram}
 #unigrams - use row_sums from slam due to memory issues with rowSums function
 uniCount <- row_sums(unigramTDM)
 uniCount <- as.data.frame(sort(uniCount, decreasing=TRUE))
@@ -168,7 +177,7 @@ uniG <- ggplot(head(uniCount, 20), aes(word, freq)) + geom_bar(stat="identity") 
 uniG
 ```
 
-```{r bigram, cache=TRUE}
+```{r bigram}
 #bigrams
 biCount <- row_sums(bigramTDM)
 biCount <- as.data.frame(sort(biCount, decreasing=TRUE))
@@ -181,7 +190,7 @@ biG <- ggplot(head(biCount, 20), aes(word, freq)) + geom_bar(stat="identity") + 
 biG
 ```
 
-```{r trigram, cache=TRUE}
+```{r trigram}
 #trigrams
 triCount <- row_sums(trigramTDM)
 triCount <- as.data.frame(sort(triCount, decreasing=TRUE))
@@ -194,59 +203,11 @@ triG <- ggplot(head(triCount, 20), aes(word, freq)) + geom_bar(stat="identity") 
 triG
 ```
 
-As a result, I develop a new corpus and ngrams with the stopwords removed.
-
-```{r noStopwords, cache=TRUE}
-sampleNoStop <- tm_map(sampleCorpus, removeWords, stopwords('english'))
-
-unigramTDM <- TermDocumentMatrix(sampleNoStop, control = list(tokenize = unigram))
-bigramTDM <- TermDocumentMatrix(sampleNoStop, control = list(tokenize = bigram))
-trigramTDM <- TermDocumentMatrix(sampleNoStop, control = list(tokenize = trigram))
-```
-
-The new plots show some intuitive pairings, although the trigrams also suggest there are some data issues (e.g. "e e e" and "column column column").
-
-```{r newPlots, cache=TRUE}
-#unigrams
-uniCount <- row_sums(unigramTDM)
-uniCount <- as.data.frame(sort(uniCount, decreasing=TRUE))
-uniCount$names = rownames(uniCount)
-colnames(uniCount) <- c("freq", "word")
-
-#Create ordered factor so ggplot doesn't sort alphabetically
-uniCount$word <- factor(uniCount$word, levels = rev(uniCount$word))
-uniG <- ggplot(head(uniCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("unigrams - no stop words")
-uniG
-
-#bigrams
-biCount <- row_sums(bigramTDM)
-biCount <- as.data.frame(sort(biCount, decreasing=TRUE))
-biCount$names = rownames(biCount)
-colnames(biCount) <- c("freq", "word")
-
-#Create ordered factor so ggplot doesn't sort alphabetically
-biCount$word <- factor(biCount$word, levels = rev(biCount$word))
-biG <- ggplot(head(biCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("bigrams - no stop words")
-biG
-
-#trigrams
-triCount <- row_sums(trigramTDM)
-triCount <- as.data.frame(sort(triCount, decreasing=TRUE))
-triCount$names = rownames(triCount)
-colnames(triCount) <- c("freq", "word")
-
-#Create ordered factor so ggplot doesn't sort alphabetically
-triCount$word <- factor(triCount$word, levels = rev(triCount$word))
-triG <- ggplot(head(triCount, 20), aes(word, freq)) + geom_bar(stat="identity") + coord_flip() + ggtitle("trigrams - no stop words")
-triG
-
-```
-
 ## Next steps
 
 Next steps for this project are to:
   
-  1. Build a larger, high-quality sample.
+1. Build a larger, high-quality sample.
 2. Learn some more about NLP. I have some intuition about building the model - look at last n-1 words and guess the highest probability final word from the ngrams with the same first n-1 words. However, I do not know how to effectively implement this, particularly for sets of words not in the sample.
 3. Build the prediction model.
 4. Test and refine to obtain acceptable performance.
